@@ -4,7 +4,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 
 dotenv.config();
-const lh = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+const lh = import.meta.env.VITE_APP_API_BASE_URL || 'http://localhost:5000';
 
 
 const socket = io(`${lh}`, {
