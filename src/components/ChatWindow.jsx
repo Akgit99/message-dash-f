@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import axios from 'axios';
-import dotenv from 'dotenv';
+// import dotenv from 'dotenv';
 
-dotenv.config();
+// dotenv.config();
 const lh = import.meta.env.VITE_APP_API_BASE_URL || 'http://localhost:5000';
 
 

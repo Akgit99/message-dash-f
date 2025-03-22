@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ChatWindow from './components/ChatWindow';
-import dotenv from 'dotenv';
+// import dotenv from 'dotenv';
 
-dotenv.config();
+// dotenv.config();
 
 const lh = import.meta.env.VITE_APP_API_BASE_URL || 'http://localhost:5000';
 
