@@ -48,10 +48,26 @@ function App() {
         }
       }
     } catch (error) {
-      console.error('Authentication error:', error);
-      const errorMessage = error.response?.data?.message || error.message || 'Authentication failed';
+      console.error("Authentication error:", error);
+    
+      let errorMessage = "Authentication failed";
+      if (error.response) {
+        if (error.response.data && error.response.data.message) {
+          errorMessage = error.response.data.message;
+        } else if (error.response.status) {
+          errorMessage = `Server error: ${error.response.status}`;
+        } else {
+          errorMessage = "Server error.";
+        }
+      } else if (error.request) {
+        errorMessage = "No response from server. Check your internet connection.";
+      } else {
+        errorMessage = error.message || "Unknown error occurred.";
+      }
+    
       alert(errorMessage);
     }
+    
   };
 
   useEffect(() => {
