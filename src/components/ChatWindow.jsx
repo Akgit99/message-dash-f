@@ -28,52 +28,50 @@ export default function ChatWindow({ currentChat, user, socket }) { // Accept so
     }
   };
 
-  useEffect(() => {
-    if (!currentChat?._id || !user?._id) return;
 
-    socket.emit('join', user._id);
+useEffect(() => {
+  if (!currentChat?._id || !user?._id) return;
+
+  fetchMessages();
+
+  const handleMessage = (msg) => {
+    //console.log('Received message via socket:', msg);
+    if (
+      (msg.sender === user._id && msg.recipient === currentChat._id) ||
+      (msg.sender === currentChat._id && msg.recipient === user._id)
+    ) {
+      setMessages((prev) => {
+        const tempIndex = prev.findIndex((m) => m._id.startsWith('temp-'));
+        if (tempIndex !== -1 && prev[tempIndex].content === msg.content) {
+          const newMessages = [...prev];
+          newMessages[tempIndex] = msg;
+          return newMessages;
+        }
+        if (!prev.some((m) => m._id === msg._id)) {
+          return [...prev, msg];
+        }
+        return prev;
+      });
+    }
+  };
+
+  socket.on('message', handleMessage);
+  socket.on('typing', ({ userId }) => {
+    if (userId === currentChat._id) {
+      setTyping(true);
+      setTimeout(() => setTyping(false), 1000);
+    }
+  });
+  socket.on('connect', () => {
     fetchMessages();
+  });
 
-    const handleMessage = (msg) => {
-      console.log('Received message via socket:', msg);
-  if (
-    (msg.sender === user._id && msg.recipient === currentChat._id) ||
-    (msg.sender === currentChat._id && msg.recipient === user._id)
-  ) {
-    setMessages((prev) => {
-      // Replace temp message if it exists, otherwise append
-      const tempIndex = prev.findIndex((m) => m._id?.startsWith('temp-') && m.content === msg.content);
-      if (tempIndex !== -1) {
-        const newMessages = [...prev];
-        newMessages[tempIndex] = msg; // Replace temp with server message
-        return newMessages;
-      }
-      if (!prev.some((m) => m._id === msg._id)) {
-        return [...prev, msg];
-      }
-      return prev;
-    });
-  }
-    };
-    socket.on('message', handleMessage);
-    
-    socket.on('typing', ({ userId }) => {
-      if (userId === currentChat._id) {
-        setTyping(true);
-        setTimeout(() => setTyping(false), 1000);
-      }
-    });
-    socket.on('connect', () => {
-      socket.emit('join', user._id);
-      fetchMessages();
-    });
-
-    return () => {
-      socket.off('message', handleMessage);
-      socket.off('typing');
-      socket.off('connect');
-    };
-  }, [currentChat?._id, user?._id, socket]);
+  return () => {
+    socket.off('message', handleMessage);
+    socket.off('typing');
+    socket.off('connect');
+  };
+}, [currentChat?._id, user?._id, socket]); 
 
   const sendMessage = () => {
     if (!message.trim() || !currentChat?._id || !user?._id) return;
@@ -86,7 +84,7 @@ export default function ChatWindow({ currentChat, user, socket }) { // Accept so
     read: false,
   };
 
-  console.log('Emitting message:', JSON.stringify(msg, null, 2));
+  //console.log('Emitting message:', JSON.stringify(msg, null, 2));
   setMessages((prev) => [...prev, { ...msg, _id: `temp-${Date.now()}` }]);
   socket.emit('message', msg);
   setMessage('');
@@ -120,66 +118,75 @@ export default function ChatWindow({ currentChat, user, socket }) { // Accept so
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-200">
-      <div className="bg-green-500 p-4 flex items-center text-white">
-        <div className="w-10 h-10 bg-gray-300 rounded-full mr-3 flex items-center justify-center font-bold">
-          {currentChat?.username?.[0]?.toUpperCase() || '?'}
-        </div>
-        <div>
-          <h3 className="font-semibold">{currentChat?.username || 'Unknown'}</h3>
-          <p className="text-sm">{currentChat?.online ? 'Online' : 'Offline'}</p>
-        </div>
+    <div className="flex flex-col h-full bg-gray-200">
+    {/* Header */}
+    <div className="bg-green-500 p-3 sm:p-4 flex items-center text-white flex-shrink-0">
+      <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-300 rounded-full mr-2 sm:mr-3 flex items-center justify-center font-bold flex-shrink-0">
+        {currentChat?.username?.[0]?.toUpperCase() || '?'}
       </div>
-      <div className="flex-1 overflow-y-auto p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]">
-        {messages.length === 0 ? (
-          <div className="text-gray-500 text-center">No messages yet</div>
-        ) : (
-          messages.map((msg, index) => (
-            <div
-              key={msg._id || `msg-${index}`}
-              className={`flex ${msg.sender === user._id ? 'justify-end' : 'justify-start'} mb-2`}
-            >
-              <div
-                className={`max-w-xs p-3 rounded-lg ${
-                  msg.sender === user._id ? 'bg-green-100 text-black' : 'bg-white text-black'
-                }`}
-              >
-                <p>{msg.content}</p>
-                <div className="text-xs text-gray-500 mt-1 flex justify-between">
-                  <span>
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  {msg.sender === user._id && <span>{msg.read ? '✓✓' : '✓'}</span>}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-        {typing && <div className="text-gray-500 text-sm">Typing...</div>}
-        {aiTyping && <div className="text-gray-500 text-sm">AI is typing...</div>}
-        <div ref={messagesEndRef} />
-      </div>
-      <div className="p-4 bg-white flex items-center border-t border-gray-200">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => {
-            setMessage(e.target.value);
-            socket.emit('typing', { userId: user._id, recipient: currentChat._id });
-          }}
-          onKeyPress={handleKeyPress}
-          className="flex-1 p-2 rounded-full bg-gray-100 border-none focus:outline-none"
-          placeholder="Type a message..."
-        />
-        <button
-          onClick={sendMessage}
-          className="ml-2 p-2 bg-green-500 text-white rounded-full hover:bg-green-600"
-        >
-          ➤
-        </button>
+      <div className="min-w-0">
+        <h3 className="font-semibold text-sm sm:text-base truncate">{currentChat?.username || 'Unknown'}</h3>
+        <p className="text-xs sm:text-sm">{currentChat?.online ? 'Online' : 'Offline'}</p>
       </div>
     </div>
-  );
+
+    {/* Messages Area */}
+    <div
+      className="flex-1 overflow-y-auto p-2 sm:p-4 bg-[url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')]"
+    >
+      {messages.length === 0 ? (
+        <div className="text-gray-500 text-center text-sm sm:text-base">No messages yet</div>
+      ) : (
+        messages.map((msg, index) => (
+          <div
+            key={msg._id || `msg-${index}`}
+            className={`flex ${msg.sender === user._id ? 'justify-end' : 'justify-start'} mb-2`}
+          >
+            <div
+              className={`max-w-[70%] sm:max-w-xs p-2 sm:p-3 rounded-lg ${
+                msg.sender === user._id ? 'bg-green-100 text-black' : 'bg-white text-black'
+              }`}
+            >
+              <p className="text-sm sm:text-base break-words">{msg.content}</p>
+              <div className="text-xs text-gray-500 mt-1 flex justify-between">
+                <span>
+                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+                {msg.sender === user._id && <span>{msg.read ? '✓✓' : '✓'}</span>}
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+      {typing && (
+        <div className="text-gray-500 text-xs sm:text-sm">{currentChat.username} is typing...</div>
+      )}
+      {aiTyping && <div className="text-gray-500 text-xs sm:text-sm">AI is typing...</div>}
+      <div ref={messagesEndRef} />
+    </div>
+
+    {/* Input Area */}
+    <div className="p-2 sm:p-4 bg-white flex items-center border-t border-gray-200 flex-shrink-0">
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => {
+          setMessage(e.target.value);
+          socket.emit('typing', { userId: user._id, recipient: currentChat._id });
+        }}
+        onKeyPress={handleKeyPress}
+        className="flex-1 p-2 sm:p-2 rounded-full bg-gray-100 border-none focus:outline-none text-sm sm:text-base"
+        placeholder="Type a message..."
+      />
+      <button
+        onClick={sendMessage}
+        className="ml-2 p-2 w-8 h-8 sm:w-10 sm:h-10 bg-green-500 text-white rounded-full hover:bg-green-600 flex items-center justify-center"
+      >
+        <span className="text-sm sm:text-base">➤</span>
+      </button>
+    </div>
+  </div>
+);
 }
 
 function getAIResponse(message) {
