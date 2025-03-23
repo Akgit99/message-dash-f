@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import ChatWindow from './components/ChatWindow';
+import io from 'socket.io-client';
 // import dotenv from 'dotenv';
 
 // dotenv.config();
 
 const lh = import.meta.env.VITE_APP_API_BASE_URL || 'http://localhost:5000';
+const socket = io(lh, { autoConnect: false });
 
 
 function App() {
@@ -30,6 +32,21 @@ function App() {
         if (response.data.token) {
           localStorage.setItem('token', response.data.token);
           setUser({ _id: response.data.userId, username });
+
+          socket.auth = { token: response.data.token }; // Set auth token
+          socket.connect(); // Connect socket after login
+
+          // socket = io(lh, {
+          //   auth: { token: response.data.token }
+          // });
+
+          socket.on('connect', () => {
+            console.log('Connected to WebSocket');
+          });
+
+          socket.on('connect_error', (err) => {
+            console.error('Socket connection failed:', err.message);
+          });
           setUsername('');
           setPassword('');
         } else {
@@ -72,9 +89,18 @@ function App() {
 
   useEffect(() => {
     if (user) {
-      setContacts([
-        { _id: 'ai', username: 'AI Bot', isAI: true, online: true, unread: 0 }
-      ]);
+      setContacts([{ _id: 'ai', username: 'AI Bot', isAI: true, online: true, unread: 0 }]);
+      socket.emit('join', user._id);
+  
+      // Keep socket alive
+      const pingInterval = setInterval(() => {
+        socket.emit('ping');
+      }, 5000); // Ping every 5 seconds
+  
+      return () => {
+        clearInterval(pingInterval);
+        socket.disconnect();
+      };
     }
   }, [user]);
 
@@ -167,7 +193,7 @@ function App() {
       </div>
       <div className="w-2/3">
         {currentChat ? (
-          <ChatWindow currentChat={currentChat} user={user} />
+          <ChatWindow currentChat={currentChat} user={user} socket={socket}/>
         ) : (
           <div className="h-full flex items-center justify-center bg-gray-200">
             <p className="text-gray-500">Select a chat to start messaging</p>

@@ -1,19 +1,10 @@
+// ChatWindow.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
 import axios from 'axios';
-// import dotenv from 'dotenv';
 
-// dotenv.config();
 const lh = import.meta.env.VITE_APP_API_BASE_URL || 'http://localhost:5000';
 
-
-const socket = io(`${lh}`, {
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000
-});
-
-export default function ChatWindow({ currentChat, user }) {
+export default function ChatWindow({ currentChat, user, socket }) { // Accept socket as prop
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState('');
   const [typing, setTyping] = useState(false);
@@ -27,16 +18,9 @@ export default function ChatWindow({ currentChat, user }) {
         console.error('No token found in localStorage');
         return;
       }
-
-      console.log('Fetching messages for:', user._id, 'with', currentChat._id);
-      const response = await axios.get(
-        `${lh}/api/messages/${currentChat._id}`,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      );
-      
-      console.log('Fetched messages from server:', response.data);
+      const response = await axios.get(`${lh}/api/messages/${currentChat._id}`, {
+        headers: { Authorization: `Bearer ${token}` }, // Add "Bearer " prefix
+      });
       setMessages(response.data || []);
     } catch (error) {
       console.error('Error fetching messages:', error.response?.data || error.message);
@@ -45,32 +29,34 @@ export default function ChatWindow({ currentChat, user }) {
   };
 
   useEffect(() => {
-    if (!currentChat?._id || !user?._id) {
-      console.log('Missing currentChat or user ID');
-      return;
-    }
+    if (!currentChat?._id || !user?._id) return;
 
-    console.log('ChatWindow mounted for user:', user._id, 'with', currentChat._id);
     socket.emit('join', user._id);
     fetchMessages();
 
     const handleMessage = (msg) => {
       console.log('Received message via socket:', msg);
-      if (
-        (msg.sender === user._id && msg.recipient === currentChat._id) ||
-        (msg.sender === currentChat._id && msg.recipient === user._id)
-      ) {
-        setMessages((prev) => {
-          if (!prev.some((m) => m._id === msg._id)) {
-            console.log('Adding new message:', msg);
-            return [...prev, msg];
-          }
-          return prev;
-        });
+  if (
+    (msg.sender === user._id && msg.recipient === currentChat._id) ||
+    (msg.sender === currentChat._id && msg.recipient === user._id)
+  ) {
+    setMessages((prev) => {
+      // Replace temp message if it exists, otherwise append
+      const tempIndex = prev.findIndex((m) => m._id?.startsWith('temp-') && m.content === msg.content);
+      if (tempIndex !== -1) {
+        const newMessages = [...prev];
+        newMessages[tempIndex] = msg; // Replace temp with server message
+        return newMessages;
       }
+      if (!prev.some((m) => m._id === msg._id)) {
+        return [...prev, msg];
+      }
+      return prev;
+    });
+  }
     };
-
     socket.on('message', handleMessage);
+    
     socket.on('typing', ({ userId }) => {
       if (userId === currentChat._id) {
         setTyping(true);
@@ -78,58 +64,56 @@ export default function ChatWindow({ currentChat, user }) {
       }
     });
     socket.on('connect', () => {
-      console.log('Socket connected');
       socket.emit('join', user._id);
       fetchMessages();
     });
-    socket.on('disconnect', () => console.log('Socket disconnected'));
 
     return () => {
       socket.off('message', handleMessage);
       socket.off('typing');
       socket.off('connect');
-      socket.off('disconnect');
     };
-  }, [currentChat?._id, user?._id]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [currentChat?._id, user?._id, socket]);
 
   const sendMessage = () => {
     if (!message.trim() || !currentChat?._id || !user?._id) return;
 
-    const msg = {
-      sender: user._id,
-      recipient: currentChat._id,
-      content: message,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
-
-    console.log('Sending message:', msg);
-    setMessages((prev) => [...prev, { ...msg, _id: `temp-${Date.now()}` }]);
-    socket.emit('message', msg);
-    setMessage('');
-
-    if (currentChat.isAI) {
-      setAiTyping(true);
-      setTimeout(() => {
-        const aiResponse = getAIResponse(message);
-        const aiMsg = {
-          sender: currentChat._id,
-          recipient: user._id,
-          content: aiResponse,
-          timestamp: new Date().toISOString(),
-          read: true,
-          _id: `temp-ai-${Date.now()}`
-        };
-        setMessages((prev) => [...prev, aiMsg]);
-        socket.emit('message', aiMsg);
-        setAiTyping(false);
-      }, 1000);
-    }
+  const msg = {
+    sender: user._id,
+    recipient: currentChat._id,
+    content: message,
+    timestamp: new Date().toISOString(),
+    read: false,
   };
+
+  console.log('Emitting message:', JSON.stringify(msg, null, 2));
+  setMessages((prev) => [...prev, { ...msg, _id: `temp-${Date.now()}` }]);
+  socket.emit('message', msg);
+  setMessage('');
+
+  if (currentChat.isAI) {
+    setAiTyping(true);
+    setTimeout(() => {
+      const aiResponse = getAIResponse(message);
+      const aiMsg = {
+        sender: currentChat._id,
+        recipient: user._id,
+        content: aiResponse,
+        timestamp: new Date().toISOString(),
+        read: true,
+        // Do NOT include _id here; let the server generate it
+      };
+      // Add _id only for local display
+      setMessages((prev) => [...prev, { ...aiMsg, _id: `temp-ai-${Date.now()}` }]);
+      socket.emit('message', aiMsg); // Emit without _id
+      setAiTyping(false);
+    }, 1000);
+  }
+     
+  };
+
+  // ... rest of the component remains the same
+
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') sendMessage();
